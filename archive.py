@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python
 #
 # Copyright 2020 Confluent Inc.
@@ -26,16 +27,12 @@ from confluent_kafka import Consumer
 import json
 import ccloud_lib
 from google.cloud import storage
-
+import os
+import zlib
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./dataengineering-final-7592663a7970.json"
 BUCKET=""
-def getBucket():
-    storage_client=storage.client()
-    buckets = storage_client.list_buckets()
-    for bucket in buckets:
-        BUCKET=bucket.name
-        break
-    return BUCKET
 
+# File upload into Google Cloud Bucket
 def uploadRecordList(bucket_name,contents,destination_blob_name):
     storage_client = storage.Client()
     bucket = storage_client.bucket(bucket_name)
@@ -56,7 +53,7 @@ if __name__ == '__main__':
     conf = ccloud_lib.read_ccloud_config(config_file)
 
     # Create Consumer instance
-    # 'auto.offset.reset=earliest' to start reading from the beginning of the
+     # 'auto.offset.reset=earliest' to start reading from the beginning of the
     #   topic if no committed offsets exist
     consumer_conf = ccloud_lib.pop_schema_registry_params_from_config(conf)
     consumer_conf['group.id'] = 'python_example_group_2'
@@ -72,8 +69,12 @@ if __name__ == '__main__':
         while True:
             msg = consumer.poll(1.0)
             if msg is None:
-                bucketName=getBucket()
-                uploadRecordList(bucketName,recordList,"maintenance-data01")
+                jsonString=json.dumps(recordList)
+                jsonFile=open("data.json","w") 
+                jsonFile.write(jsonString)  # Writing Array of objects into json file
+                compreesed_data = zlib.compress(jsonFile,zlib.Z_BEST_COMPRESSION) #Data Compression using Z-lib
+                uploadRecordList("maintenance-data01",jsonFile,"maintenance-data01") 
+                jsonFile.close()
                 # No message available within timeout.
                 # Initial message consumption may take up to
                 # `session.timeout.ms` for the consumer group to
@@ -81,14 +82,12 @@ if __name__ == '__main__':
                 print("Waiting for message or event/error in poll()")
                 continue
             elif msg.error():
-                print('error: {}'.format(msg.error()))
+                 print('error: {}'.format(msg.error()))
             else:
                 # Check for Kafka message
                 record_key = msg.key()
                 record_value = msg.value()
-		        uploadRecordList("maintenance-data01",record_value,"maintenance-data01")
                 recordList.append(record_value)
-                data = json.loads(record_value)
                 total_count += 1
                 print("Consumed record with key {} and value {}, \
                       and updated total count to {}"
